@@ -1,0 +1,60 @@
+name: Konten harian -> Buffer
+on:
+  schedule:
+    - cron: "0 1 * * *"   # tiap hari 08.00 WIB (post tayang di slot Buffer 19.00)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Kirim walau hari ini sudah ada post terkirim"
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: daily-post
+  cancel-in-progress: false
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pillow
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Jaga stok konten (Gemini, hanya jika pending < 3)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python generate_content.py
+      - name: Tentukan post hari ini
+        run: |
+          NEXT=$(python publish_buffer.py --next)
+          echo "Post hari ini: $NEXT"
+          echo "NEXT=$NEXT" >> $GITHUB_ENV
+      - name: Render slide dan video
+        run: python render.py $NEXT
+      - name: Siapkan media publik
+        run: |
+          D=$(TZ=Asia/Jakarta date +%Y%m%d)
+          mkdir -p site/$D && cp output/$NEXT.mp4 site/$D/
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "MEDIA_BASE_URL=https://$OWNER.github.io/${{ github.event.repository.name }}/$D" >> $GITHUB_ENV
+      - name: Unggah ke GitHub Pages (file lama dipertahankan)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          keep_files: true
+      - name: Kirim ke antrean Buffer
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          BUFFER_CHANNEL_ID: ${{ secrets.BUFFER_CHANNEL_ID }}
+        run: python publish_buffer.py ${{ inputs.force && '--force' || '' }}
+      - name: Simpan status ke repo
+        if: always()
+        run: |
+          git config user.name "bot"; git config user.email "bot@users.noreply.github.com"
+          git add content.csv
+          git commit -m "status konten harian" || echo "tidak ada perubahan"
+          git pull --rebase || true
+          git push || true
