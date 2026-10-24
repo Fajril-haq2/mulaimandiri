@@ -96,9 +96,17 @@ def render_post(r, out, video=True):
         f.write(r["caption_lengkap"])
     if video and shutil.which("ffmpeg"):
         mp4 = os.path.join(out, f"{r['id']}.mp4")
+        dur = len(imgs) * SECONDS_PER_SLIDE
         cmd = ["ffmpeg", "-y", "-loglevel", "error", "-framerate", f"1/{SECONDS_PER_SLIDE}",
-               "-i", os.path.join(folder, f"{r['id']}_slide%d.png"),
-               "-vf", f"fps=30,format=yuv420p", "-c:v", "libx264", "-movflags", "+faststart", mp4]
+               "-i", os.path.join(folder, f"{r['id']}_slide%d.png")]
+        if os.environ.get("MUSIC", "on") != "off":
+            import music
+            wav = os.path.join(folder, f"{r['id']}_music.wav")
+            music.save_wav(wav, music.make_track(r["id"], dur + 1, music.mood_for(r.get("tema", ""))))
+            cmd += ["-i", wav, "-af",
+                    f"lowpass=f=5500,afade=t=in:d=0.4,afade=t=out:st={dur-1.5}:d=1.5,loudnorm=I=-18:TP=-2:LRA=7",
+                    "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2"]
+        cmd += ["-vf", "fps=30,format=yuv420p", "-c:v", "libx264", "-movflags", "+faststart", "-t", str(dur), mp4]
         subprocess.run(cmd, check=True)
     print("OK", r["id"])
 
