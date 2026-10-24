@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install pillow
+      - run: pip install pillow numpy
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Jaga stok konten (Gemini, hanya jika pending < 3)
         env:
