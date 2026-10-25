@@ -1,0 +1,76 @@
+name: Video Kucing Quote
+
+on:
+  schedule:
+    # 01:00 UTC = 08:00 WIB (sama dengan jam alur harian lama; Buffer menayangkan di slot 19:00 WIB).
+    # Hari: 1=Senin, 3=Rabu, 5=Jumat. Harus SAMA dengan variabel CAT_WEEKDAYS.
+    # daily.yml (alur lama) dijadwalkan di hari sisanya: 0,2,4,6.
+    - cron: "0 1 * * 1,3,5"
+  workflow_dispatch:
+    inputs:
+      day:
+        description: "Tes: paksa render konten hari ke-N (1-30). Kosongkan = otomatis sesuai tanggal."
+        required: false
+      post:
+        description: "Tes: kirim ke Buffer juga? (true/false)"
+        required: false
+        default: "false"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Pasang ffmpeg dan dependensi gambar
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg libcairo2-dev pkg-config python3-dev
+          pip install -r catvideo/requirements.txt
+
+      - name: Render video hari ini
+        id: render
+        env:
+          START_DATE: ${{ vars.CAT_START_DATE }}
+          WEEKDAYS: ${{ vars.CAT_WEEKDAYS || '1,3,5' }}
+          FORCE_DAY: ${{ github.event.inputs.day }}
+        run: |
+          if [ -n "$FORCE_DAY" ]; then
+            python catvideo/build_video.py --day "$FORCE_DAY" --out catvideo/out
+          else
+            TODAY=$(TZ=Asia/Jakarta date +%F)
+            python catvideo/build_video.py --date "$TODAY" --start "$START_DATE" --weekdays "$WEEKDAYS" --out catvideo/out
+          fi
+
+      - name: Simpan hasil (bisa diunduh untuk dicek)
+        if: ${{ steps.render.outputs.skip != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-kucing
+          path: catvideo/out/*
+          retention-days: 14
+
+      # ------------------------------------------------------------------
+      # LANGKAH TERAKHIR: kirim ke Buffer.
+      # Ganti isi 'run' dengan perintah yang SAMA seperti langkah "kirim ke Buffer"
+      # di workflow alur lamamu. Nilai yang tersedia dari langkah render:
+      #   $VIDEO         -> path file mp4 hari ini
+      #   $CAPTION_FILE  -> file teks berisi caption + hashtag
+      # Kalau alur lamamu membaca caption dari variabel, pakai: CAPTION="$(cat "$CAPTION_FILE")"
+      # ------------------------------------------------------------------
+      - name: Kirim ke Buffer
+        if: ${{ steps.render.outputs.skip != 'true' && (github.event_name == 'schedule' || github.event.inputs.post == 'true') }}
+        env:
+          # Tambahkan secret yang dipakai alur lamamu (nama harus sama), contoh:
+          BUFFER_ACCESS_TOKEN: ${{ secrets.BUFFER_ACCESS_TOKEN }}
+          VIDEO: ${{ steps.render.outputs.video }}
+          CAPTION_FILE: ${{ steps.render.outputs.caption_file }}
+        run: |
+          echo "GANTI blok ini dengan perintah posting ke Buffer milikmu"
+          echo "Video : $VIDEO"
+          cat "$CAPTION_FILE"
