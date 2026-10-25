@@ -10,3 +10,6 @@ Folder ini berdiri sendiri dan tidak menyentuh file alur harian (render.py, musi
 - RENCANA_30_HARI.md : ringkasan 30 hari
 
 Workflow: .github/workflows/cat-quote-video.yml (variabel repo: CAT_START_DATE, CAT_WEEKDAYS).
+
+Sambungan Buffer: post_cat.py memakai fungsi dari publish_buffer.py di root repo (tanpa mengubahnya).
+Penjaga: tidak mengirim kalau hari ini sudah ada post dari content.csv (queued_date) atau catvideo/posted_log.txt.

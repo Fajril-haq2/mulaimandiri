@@ -245,7 +245,7 @@ def main():
                 if (start + dt.timedelta(days=i)).isoweekday() in wd)
         days = [(n - 1) % len(items) + 1]
     else:
-        ap.error("pilih --day, --date+--start, atau --all")
+        ap.error("pilih --day, --date+--start, atau --all. Kalau dari GitHub Actions: variabel repo CAT_START_DATE (format 2026-10-26) belum diisi.")
     for d in days:
         it = items[d - 1]
         mp4 = os.path.join(a.out, f"day{d:02d}.mp4")
