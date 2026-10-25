@@ -1,60 +1,111 @@
-name: Konten harian -> Buffer
+name: Video kucing quote -> Buffer
+
 on:
   schedule:
-    - cron: "0 1 * * *"   # tiap hari 08.00 WIB (post tayang di slot Buffer 19.00)
+    # 01:00 UTC = 08:00 WIB, sama dengan daily.yml. Tayang di slot Buffer 19.00.
+    # Hari video kucing: 1=Senin, 3=Rabu, 5=Jumat (harus sama dengan variabel CAT_WEEKDAYS).
+    # daily.yml dijadwalkan di hari sisanya: 0,2,4,6.
+    - cron: "0 1 * * 1,3,5"
   workflow_dispatch:
     inputs:
-      force:
-        description: "Kirim walau hari ini sudah ada post terkirim"
-        type: boolean
-        default: false
+      day:
+        description: "Tes: paksa konten hari ke-N (1-30). Kosongkan = otomatis sesuai tanggal."
+        required: false
+      post:
+        description: "Tes: kirim ke Buffer juga? (true/false)"
+        required: false
+        default: "false"
+
 permissions:
   contents: write
+
 concurrency:
-  group: daily-post
+  group: daily-post          # sama dengan daily.yml supaya tidak jalan bersamaan
   cancel-in-progress: false
+
 jobs:
-  daily:
+  cat:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
-      - run: pip install pillow numpy
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: Jaga stok konten (Gemini, hanya jika pending < 3)
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python generate_content.py
-      - name: Tentukan post hari ini
+        with:
+          python-version: "3.12"
+
+      - name: Pasang ffmpeg dan dependensi gambar
         run: |
-          NEXT=$(python publish_buffer.py --next)
-          echo "Post hari ini: $NEXT"
-          echo "NEXT=$NEXT" >> $GITHUB_ENV
-      - name: Render slide dan video
-        run: python render.py $NEXT
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg libcairo2-dev pkg-config python3-dev
+          pip install -r catvideo/requirements.txt
+
+      - name: Render video hari ini
+        id: render
+        env:
+          START_DATE: ${{ vars.CAT_START_DATE }}
+          WEEKDAYS: ${{ vars.CAT_WEEKDAYS || '1,3,5' }}
+          FORCE_DAY: ${{ github.event.inputs.day }}
+        run: |
+          if [ -n "$FORCE_DAY" ]; then
+            python catvideo/build_video.py --day "$FORCE_DAY" --out catvideo/out
+          else
+            TODAY=$(TZ=Asia/Jakarta date +%F)
+            python catvideo/build_video.py --date "$TODAY" --start "$START_DATE" --weekdays "$WEEKDAYS" --out catvideo/out
+          fi
+
+      - name: Putuskan kirim atau tidak
+        id: gate
+        env:
+          SKIP: ${{ steps.render.outputs.skip }}
+          EVENT: ${{ github.event_name }}
+          POST: ${{ github.event.inputs.post }}
+        run: |
+          if [ "$SKIP" != "true" ] && { [ "$EVENT" = "schedule" ] || [ "$POST" = "true" ]; }; then
+            echo "post=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "post=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Simpan hasil render (bisa diunduh untuk dicek)
+        if: ${{ steps.render.outputs.skip != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-kucing
+          path: catvideo/out/*
+          retention-days: 14
+
       - name: Siapkan media publik
+        if: ${{ steps.gate.outputs.post == 'true' }}
         run: |
           D=$(TZ=Asia/Jakarta date +%Y%m%d)
-          mkdir -p site/$D && cp output/$NEXT.mp4 site/$D/
+          NAME=cat_day$(printf %02d "${{ steps.render.outputs.day }}")
+          mkdir -p site/$D && cp "${{ steps.render.outputs.video }}" "site/$D/$NAME.mp4"
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "MEDIA_BASE_URL=https://$OWNER.github.io/${{ github.event.repository.name }}/$D" >> $GITHUB_ENV
+          echo "CAT_NAME=$NAME" >> $GITHUB_ENV
+
       - name: Unggah ke GitHub Pages (file lama dipertahankan)
+        if: ${{ steps.gate.outputs.post == 'true' }}
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./site
           keep_files: true
+
       - name: Kirim ke antrean Buffer
+        if: ${{ steps.gate.outputs.post == 'true' }}
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
           BUFFER_CHANNEL_ID: ${{ secrets.BUFFER_CHANNEL_ID }}
-        run: python publish_buffer.py ${{ inputs.force && '--force' || '' }}
-      - name: Simpan status ke repo
-        if: always()
+          CAPTION_FILE: ${{ steps.render.outputs.caption_file }}
+        run: python catvideo/post_cat.py --name "$CAT_NAME" --caption-file "$CAPTION_FILE"
+
+      - name: Simpan log video kucing ke repo
+        if: ${{ always() && steps.gate.outputs.post == 'true' }}
         run: |
           git config user.name "bot"; git config user.email "bot@users.noreply.github.com"
-          git add content.csv
-          git commit -m "status konten harian" || echo "tidak ada perubahan"
+          git add catvideo/posted_log.txt || true
+          git commit -m "log video kucing" || echo "tidak ada perubahan"
           git pull --rebase || true
           git push || true
