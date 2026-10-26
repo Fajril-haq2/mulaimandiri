@@ -11,5 +11,7 @@ Folder ini berdiri sendiri dan tidak menyentuh file alur harian (render.py, musi
 
 Workflow: .github/workflows/cat-quote-video.yml (variabel repo: CAT_START_DATE, CAT_WEEKDAYS).
 
-Sambungan Buffer: post_cat.py memakai fungsi dari publish_buffer.py di root repo (tanpa mengubahnya).
-Penjaga: tidak mengirim kalau hari ini sudah ada post dari content.csv (queued_date) atau catvideo/posted_log.txt.
+Sambungan Buffer: post_cat.py memakai fungsi dari publish_buffer.py di root repo (tanpa mengubahnya) dan
+menjadwalkan video kucing ke jam tetap (default 17:00 WIB, variabel repo CAT_POST_TIME) dengan mode Buffer
+customScheduled. Slot antrean 19:00 milik alur harian tidak dipakai/diubah.
+Penjaga: satu video kucing per hari (catvideo/posted_log.txt).
