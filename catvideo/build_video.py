@@ -23,7 +23,7 @@ FONT_B = os.path.join(HERE, "fonts", "Poppins-Bold.ttf")
 FONT_M = os.path.join(HERE, "fonts", "Poppins-Medium.ttf")
 TEXT_Y0, TEXT_Y1 = 190, 535          # area teks (ruang 720x1280)
 SCENE_SCALE, SCENE_GROUND = 0.85, 1020
-INTRO, OUTRO = 0.6, 2.2
+INTRO, OUTRO = 0.0, 2.2   # INTRO 0: hook langsung tampil di frame pertama (thumbnail/cover memuat hook)
 
 
 # ------------------------------------------------------------------ timing
@@ -173,9 +173,9 @@ def render(item, out_mp4, width=720, quiet=False):
         ctx.restore()
         surf.flush()
         # teks
-        for p, bgr, a in layers:
+        for li, (p, bgr, a) in enumerate(layers):
             if p["t0"] - 0.01 <= t <= (1e9 if p["kind"] == "langkah" else p["t1"] + 0.4):
-                fi = ease((t - p["t0"] - 0.12) / 0.5)
+                fi = 1.0 if li == 0 else ease((t - p["t0"] - 0.12) / 0.5)
                 last = p["kind"] == "langkah"
                 fo = 1.0 if last else 1 - ease((t - (p["t1"] - 0.3)) / 0.28)
                 al = fi * fo
