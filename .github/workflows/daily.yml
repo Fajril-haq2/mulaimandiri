@@ -2,10 +2,9 @@ name: Video kucing quote -> Buffer
 
 on:
   schedule:
-    # 01:00 UTC = 08:00 WIB, sama dengan daily.yml. Tayang di slot Buffer 19.00.
-    # Hari video kucing: 1=Senin, 3=Rabu, 5=Jumat (harus sama dengan variabel CAT_WEEKDAYS).
-    # daily.yml dijadwalkan di hari sisanya: 0,2,4,6.
-    - cron: "0 1 * * 1,3,5"
+    # 01:30 UTC = 08:30 WIB: render + unggah + jadwalkan ke Buffer untuk tayang HARI ITU jam 17:00 WIB.
+    # (daily.yml tetap jalan 08:00 WIB dan tayang 19:00 lewat antrean. Tidak diubah sama sekali.)
+    - cron: "30 1 * * *"
   workflow_dispatch:
     inputs:
       day:
@@ -44,7 +43,7 @@ jobs:
         id: render
         env:
           START_DATE: ${{ vars.CAT_START_DATE }}
-          WEEKDAYS: ${{ vars.CAT_WEEKDAYS || '1,3,5' }}
+          WEEKDAYS: ${{ vars.CAT_WEEKDAYS || '1,2,3,4,5,6,7' }}
           FORCE_DAY: ${{ github.event.inputs.day }}
         run: |
           if [ -n "$FORCE_DAY" ]; then
@@ -93,12 +92,13 @@ jobs:
           publish_dir: ./site
           keep_files: true
 
-      - name: Kirim ke antrean Buffer
+      - name: Jadwalkan ke Buffer (jam 17.00 WIB)
         if: ${{ steps.gate.outputs.post == 'true' }}
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
           BUFFER_CHANNEL_ID: ${{ secrets.BUFFER_CHANNEL_ID }}
           CAPTION_FILE: ${{ steps.render.outputs.caption_file }}
+          CAT_POST_TIME: ${{ vars.CAT_POST_TIME || '17:00' }}   # jam tayang WIB
         run: python catvideo/post_cat.py --name "$CAT_NAME" --caption-file "$CAPTION_FILE"
 
       - name: Simpan log video kucing ke repo
